@@ -159,6 +159,11 @@ namespace Yarn.Unity.Editor
 
                 foreach (var loc in localizations)
                 {
+                    if (loc.stringsFile == null) {
+                        Debug.LogWarning($"Can't update localization for {loc.languageID} because it doesn't have a strings file.", yarnProjectImporter);
+                        continue;
+                    }
+                    
                     var fileWasChanged = UpdateLocalizationFile(baseLocalizationStrings, loc.languageID, loc.stringsFile);
 
                     if (fileWasChanged)
@@ -575,7 +580,7 @@ namespace Yarn.Unity.Editor
             var allFilePaths = yarnProjectImporter.sourceScripts.Select(textAsset => AssetDatabase.GetAssetPath(textAsset));
 
             var library = new Library();
-            YarnProject.AddYarnFunctionMethodsToLibrary(library);
+            ActionManager.RegisterFunctions(library);
 
             var explicitDeclarationsCompilerJob = Compiler.CompilationJob.CreateFromFiles(AssetDatabase.GetAssetPath(yarnProjectImporter));
 

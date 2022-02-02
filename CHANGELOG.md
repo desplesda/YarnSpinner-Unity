@@ -2,9 +2,45 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+
+### Added
+
+### Changed
+
+- Fixed a bug where changing a Yarn script asset in during Play Mode would cause the string table to become empty until the next import (#154)
+
+### Removed
+
+## [2.0.2] 2022-01-08
+
+### Added
+
+- You can now specify which assemblies you want Yarn Spinner to search for `YarnCommand` and `YarnFunction` methods in. 
+  - By default, Yarn Spinner will search in your game's code, as well as every assembly definition in your code and your packages.
+  - You can choose to make Yarn Spinner only look in specific assembly definitions, which reduces the amount of time needed to search for commands and functions.
+  - To control how Yarn Spinner searches for commands and actions, turn off "Search All Assemblies" in the Inspector for a Yarn Project.
+- Added a Spanish translation to the Intro sample.
+
+### Changed
+
+- ActionManager now only searches for commands and actions in assemblies that Yarn Projects specify. This significantly reduces startup time and memory usage.
+- Improved error messages when calling methods defined via the `YarnCommand` attribute where the specified object can't be found.
+
+## [2.0.1] 2021-12-23
+
+### Added
+
+- The v1 to v2 language upgrader now renames node names that have a period (`.`) in their names to use underscores (`_`) instead. Jumps and options are also updated to use these new names.
+
+### Changed
+
+- Fixed a crash in the compiler when producing an error message about an undeclared function.
+- Fixed an error when a constant float value (such as in a `<<declare>>` statement) was parsed and the user's current locale doesn't use a period (`.`) as the decimal separator.
+
+## [2.0.0-rc1] 2021-12-13
 
 ### Added
 
@@ -13,6 +49,101 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - You can now add dialogue views to dialogue runner at any time.
 
 - The inspector for Yarn scripts now allows you to change the Project that the script belongs to. (@radiatoryang)
+
+- Yarn script compile errors will prevent play mode.
+
+- Default functions have been added for convenience.
+  - `float random()` - returns a number between 0 and 1, inclusive (proxies Unity's default prng)
+  - `float random_range(float, float)` - returns a number in a given range, inclusive (proxies Unity's default prng)
+  - `int dice(int)` - returns an integer in a given range, like a dice (proxies Unity's default prng)
+    - For example, `dice(6) + dice(6)` to simulate two dice, or `dice(20)` for a D20 roll.
+  - `int round(float)` - rounds a number using away-from-zero rounding
+  - `float round_places(float, int)` - rounds a number to n digits using away-from-zero rounding
+  - `int floor(float)` - floors a number (towards negative infinity)
+  - `int ceil(float)` - ceilings a number (towards positive infinity)
+  - `int int(float)` - truncates the number (towards zero)
+  - `int inc(float | int)` - increments to the next integer
+  - `int dec(float | int)` - decrements to the previous integer
+  - `int decimal(float)` - gets the decimal portion of the float
+
+- The `YarnFunction` attribute has been added.
+  - Simply add it to a static function, eg
+
+    ```cs
+    [YarnFunction] // registers function under "example"
+    public static int example(int param) {
+      return param + 1;
+    }
+
+    [YarnFunction("custom_name")] // registers function under "custom_name"
+    public static int example2(int param) {
+      return param * param;
+    }
+    ```
+
+- The `YarnCommand` attribute has been improved and made more robust for most use cases.
+  - You can now leave the name blank to use the method name as the registration name.
+
+    ```cs
+    [YarnCommand] // like in previous example with YarnFunction.
+    void example(int steps) {
+      for (int i = 0; i < steps; i++) { ... }
+    }
+
+    [YarnCommand("custom_name")] // you can still provide a custom name if you want
+    void example2(int steps) {
+      for (int i = steps - 1; i >= 0; i--) { ... }
+    }
+    ```
+
+  - It now recognizes static functions and does not attempt to use the first parameter as an instance variable anymore.
+
+    ```cs
+    [YarnCommand] // use like so: <<example>>
+    static void example() => ...;
+
+    [YarnCommand] // still as before: <<example2 objectName>>
+    void example2() => ...;
+    ```
+
+  - You can also define custom getters for better performance.
+  
+    ```cs
+    [YarnStateInjector(nameof(GetBehavior))] // if this is null, the previous behavior of using GameObject.Find will still be available
+    class CustomBehavior : MonoBehaviour {
+      static CustomBehavior GetBehavior(string name) {
+        // e.g., it may only exist under a certain transform, or you have a custom cache...
+        // or it's built from a ScriptableObject...
+        return ...;
+      }
+
+      [YarnCommand] // the "this" will be as returned from GetBehavior
+      void example() => Debug.Log(this);
+
+      // special variation on getting behavior
+      static CustomBehavior GetBehaviorSpecial(string name) => ...;
+
+      [YarnCommand(Injector = nameof(GetBehaviorSpecial))]
+      void example_special() => Debug.Log(this);
+    }
+    ```
+
+  - You can also define custom getters for Component parameters in the same vein.
+  
+    ```cs
+    class CustomBehavior : MonoBehaviour {
+      static Animator GetAnimator(string name) => ...;
+
+      [YarnCommand]
+      void example([YarnParameter(nameof(GetAnimator))] Animator animator) => Debug.Log(animator);
+    }
+    ```
+
+  - You should continue to use manual registration if you want to make an instance function (ie where the ["target"](https://docs.microsoft.com/en-us/dotnet/api/system.delegate.target?view=netstandard-2.0) is defined) static.
+
+- Sample scenes now have a render pipeline detector gameobject that will warn when the sample scene materials won't look correct in the current render pipeline.
+
+- Variables declared inside Yarn scripts will now have the default values set into the variable storage.
 
 ### Changed
 
@@ -23,9 +154,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - `LocalizedLine.Text`'s setter is now public, not internal.
 
+- `DialogueRunner` will now throw an exception if a dialogue view attempts to select an
+  option on the same frame that options are run.
+
+- `DialogueRunner.VariableStorage` can now be modified at runtime.
+
+- Calling `DialogueRunner.StartDialogue` when the dialogue runner is already running will now result in an error being logged.
+
+- Line Views will now only enable and disable action references if the line view is also configured to use said action.
+
+- Yarn Project importer will now save variable declaration metadata on the first time
+
 ### Removed
 
-## [v2.0.0-beta5] 2021-08-17
+- Support for Unity 2018 LTS has been dropped, and 2019 LTS (currently 2019.4.32f1) will be the minimum supported version. The support scheme for Yarn Spinner will be clarified in the [CONTRIBUTING](./CONTRIBUTING.md) docs. If you still require support for 2018, please join our [Discord](https://discord.gg/yarnspinner)!
+
+## [2.0.0-beta5] 2021-08-17
 
 ### Added
 
@@ -42,7 +186,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 * Yarn Programs: The 'Convert Implicit Declarations' button has been temporarily removed, due to a required compatibility change related to the new type system. It will be restored before final 2.0 release.
 
-## [v2.0.0-beta4] 2021-04-01
+## [2.0.0-beta4] 2021-04-01
 
 Yarn Spinner 2.0 Beta 4 is a hotfix release for Yarn Spinner 2.0 Beta 3. 
 
@@ -50,7 +194,7 @@ Yarn Spinner 2.0 Beta 4 is a hotfix release for Yarn Spinner 2.0 Beta 3.
 
 - Fixed an issue that caused Yarn Spinner to not compile on Unity 2018 or Unity 2019.
 
-## [v2.0.0-beta3] 2021-03-27
+## [2.0.0-beta3] 2021-03-27
 
 ### Added
 
@@ -132,7 +276,7 @@ With this change, you can instead say this:
 - You no longer specify a list of languages available to your project in the Preferences menu or in the project settings. This is now controlled from the Yarn Project.
 - The `StartDialogue()` method (with no parameters) has been removed. Instead, provide a node name to start from when calling `StartDialogue(nodeName)`.
 
-## [v2.0.0-beta2] 2021-01-14
+## [2.0.0-beta2] 2021-01-14
 
 ### Added
 
@@ -179,7 +323,7 @@ Kim: You want a bagel?
 
 - InMemoryVariableStorage no longer manages 'default' variables (this concept has moved to the Yarn Program.) (@radiatoryang)
 
-## [v2.0.0-beta1] 2020-10-19
+## [2.0.0-beta1] 2020-10-19
 
 ### Added
 
@@ -218,13 +362,13 @@ Kim: You want a bagel?
 ### Removed
 - Commands registered via the `YarnCommand` attribute can no longer accept a `params` array of parameters. If your command takes a variable number of parameters, use optional parameters instead.
 
-## [v1.2.7] 
+## [1.2.7] 
 
 ### Changed
 
 - Backported check for Experimental status of AssetImporter (promoted in 2020.2)
 
-## [v1.2.6]
+## [1.2.6]
 
 Note: Versions 1.2.1 through 1.2.5 are identical to v1.2.0; they were version number bumps while we were diagnosing an issue in OpenUPM.
 
@@ -232,7 +376,7 @@ Note: Versions 1.2.1 through 1.2.5 are identical to v1.2.0; they were version nu
 
 - Fixed compiler issues in Unity 2019.3 and later by adding an explicit reference to YarnSpinner.dll in YarnSpinnerTests.asmdef
 
-## [v1.2.0] 2020-05-04
+## [1.2.0] 2020-05-04
 
 This is the first release of v1.2.0 of Yarn Spinner for Unity as a separate project. Previously, this project's source code was part of the Yarn Spinner repository. Version 1.2.0 of Yarn Spinner contains an identical release to this.
 

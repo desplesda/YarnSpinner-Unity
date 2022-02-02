@@ -96,13 +96,21 @@ namespace Yarn.Unity.Tests
         [TestCase("testCommandNoParameters DialogueRunner", "success")]
         [TestCase("testCommandOptionalParams DialogueRunner 1", "3")]
         [TestCase("testCommandOptionalParams DialogueRunner 1 3", "4")]
+        [TestCase("testCommandDefaultName DialogueRunner", "success")]
+        [TestCase("testCommandCustomInjector custom", "success")]
+        [TestCase("testStaticCommand", "success")]
+        [TestCase("testClassWideCustomInjector something", "success")]
+        [TestCase("testPrivateStaticCommand", "success")]
+        [TestCase("testPrivate something", "success")]
+        [TestCase("testCustomParameter Sphere", "Got Sphere")]
+        [TestCase("testExternalAssemblyCommand", "success")]
         public void HandleCommand_DispatchesCommands(string test, string expectedLogResult) {
             var runner = GameObject.FindObjectOfType<DialogueRunner>();
 
             LogAssert.Expect(LogType.Log, expectedLogResult);
-            var methodFound = runner.DispatchCommandToGameObject(test);
+            var methodFound = runner.DispatchCommandToGameObject(test, () => {});
 
-            Assert.True(methodFound);        
+            Assert.AreEqual(methodFound, DialogueRunner.CommandDispatchResult.Success);        
         }
 
         [UnityTest]
@@ -111,7 +119,7 @@ namespace Yarn.Unity.Tests
 
             var framesToWait = 5;
 
-            runner.DispatchCommandToGameObject($"testCommandCoroutine DialogueRunner {framesToWait}");
+            runner.DispatchCommandToGameObject($"testCommandCoroutine DialogueRunner {framesToWait}", () => {});
 
             LogAssert.Expect(LogType.Log, $"success {Time.frameCount + framesToWait}");
 
@@ -122,23 +130,22 @@ namespace Yarn.Unity.Tests
             }
         }
 
-        [Test]
-        public void HandleCommand_FailsWhenParameterCountNotCorrect() {
+        [TestCase("testCommandOptionalParams DialogueRunner", "requires between 1 and 2 parameters, but 0 were provided")]
+        [TestCase("testCommandOptionalParams DialogueRunner 1 2 3", "requires between 1 and 2 parameters, but 3 were provided")]
+        public void HandleCommand_FailsWhenParameterCountNotCorrect(string command, string error) {
             var runner = GameObject.FindObjectOfType<DialogueRunner>();
 
-            LogAssert.Expect(LogType.Error, new Regex("requires between 1 and 2 parameters, but 0 were provided"));
-            runner.DispatchCommandToGameObject("testCommandOptionalParams DialogueRunner");
-
-            LogAssert.Expect(LogType.Error, new Regex("requires between 1 and 2 parameters, but 3 were provided"));
-            runner.DispatchCommandToGameObject("testCommandOptionalParams DialogueRunner 1 2 3");
+            LogAssert.Expect(LogType.Error, new Regex(error));
+            runner.DispatchCommandToGameObject(command, () => {});
         }
 
-        [Test]
-        public void HandleCommand_FailsWhenParameterTypesNotValid() {
+        [TestCase("testCommandInteger DialogueRunner 1 not_an_integer", "Can't convert the given parameter")]
+        [TestCase("testCommandCustomInjector asdf", "Non-static method requires a target")]
+        public void HandleCommand_FailsWhenParameterTypesNotValid(string command, string error) {
             var runner = GameObject.FindObjectOfType<DialogueRunner>();
 
-            LogAssert.Expect(LogType.Error, new Regex("can't convert parameter"));
-            runner.DispatchCommandToGameObject("testCommandInteger DialogueRunner 1 not_an_integer");
+            LogAssert.Expect(LogType.Error, new Regex(error));
+            runner.DispatchCommandToGameObject(command, () => {});
         }
 
         [Test]
@@ -151,8 +158,8 @@ namespace Yarn.Unity.Tests
             LogAssert.Expect(LogType.Log, "success 1");
             LogAssert.Expect(LogType.Log, "success 2");
 
-            runner.DispatchCommandToRegisteredHandlers("test1");
-            runner.DispatchCommandToRegisteredHandlers("test2 2");
+            runner.DispatchCommandToRegisteredHandlers("test1", () => {});
+            runner.DispatchCommandToRegisteredHandlers("test2 2", () => {});
         }
 
         [UnityTest]
@@ -174,7 +181,7 @@ namespace Yarn.Unity.Tests
 
             LogAssert.Expect(LogType.Log, $"success {Time.frameCount + framesToWait}");
 
-            runner.DispatchCommandToRegisteredHandlers("test");
+            runner.DispatchCommandToRegisteredHandlers("test", () => {});
 
             // After framesToWait frames, we should have seen the log
             while (framesToWait > 0) {
@@ -195,11 +202,36 @@ namespace Yarn.Unity.Tests
             Assert.AreEqual("Jane: Yes! I've already walked 0 laps!", dialogueUI.CurrentLine);
 
             variableStorage.SetValue("$laps", 1);
-
+            runner.Stop();
             runner.StartDialogue("VariableTest");
             yield return null;
 
             Assert.AreEqual("Jane: Yes! I've already walked 1 laps!", dialogueUI.CurrentLine);
+
+            variableStorage.SetValue("$laps", 5);
+            runner.Stop();
+            runner.StartDialogue("FunctionTest");
+            yield return null;
+
+            Assert.AreEqual("Jane: Yes! I've already walked 25 laps!", dialogueUI.CurrentLine);
+
+            runner.Stop();
+            runner.StartDialogue("FunctionTest2");
+            yield return null;
+
+            Assert.AreEqual("Jane: Yes! I've already walked arg! i am a pirate no you're not! arg! i am a pirate laps!", dialogueUI.CurrentLine);
+
+            runner.Stop();
+            runner.StartDialogue("ExternalFunctionTest");
+            yield return null;
+
+            Assert.AreEqual("Jane: Here's a function from code that's in another assembly: 42", dialogueUI.CurrentLine);
+
+            runner.Stop();
+            runner.StartDialogue("BuiltinsTest");
+            yield return null;
+
+            Assert.AreEqual("Jane: round(3.522) = 4; round_places(3.522, 2) = 3.52; floor(3.522) = 3; floor(-3.522) = -4; ceil(3.522) = 4; ceil(-3.522) = -3; inc(3.522) = 4; inc(4) = 5; dec(3.522) = 3; dec(3) = 2; decimal(3.522) = 0.5220001; int(3.522) = 3; int(-3.522) = -3;", dialogueUI.CurrentLine);
 
             dialogueUI.ReadyForNextLine();
         }   

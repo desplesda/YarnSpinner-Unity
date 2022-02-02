@@ -40,7 +40,7 @@ namespace Yarn.Unity
 
             var timeElapsed = 0f;
 
-            while (timeElapsed < fadeTime && interruption?.Interrupted == false)
+            while (timeElapsed < fadeTime && (interruption?.Interrupted ?? false) == false)
             {
                 var fraction = timeElapsed / fadeTime;
                 timeElapsed += Time.deltaTime;
@@ -103,7 +103,7 @@ namespace Yarn.Unity
             // the requested speed.
             var accumulator = Time.deltaTime;
 
-            while (text.maxVisibleCharacters < characterCount && interruption?.Interrupted == false)
+            while (text.maxVisibleCharacters < characterCount && (interruption == null || interruption.Interrupted == false))
             {
                 // We need to show as many letters as we have accumulated
                 // time for.
@@ -230,24 +230,45 @@ namespace Yarn.Unity
 #if ENABLE_LEGACY_INPUT_MANAGER
         public void Update()
         {
-            // If the legacy input system is available, we are configured
-            // to use a keycode to skip lines, AND the skip keycode was
-            // just pressed, then skip
-            if (continueActionType == ContinueActionType.KeyCode)
+            // Should we indicate to the DialogueRunner that we want to
+            // interrupt/continue a line? We need to pass a number of
+            // checks.
+            
+            // We need to be configured to use a keycode to interrupt/continue
+            // lines.
+            if (continueActionType != ContinueActionType.KeyCode)
             {
-                if (UnityEngine.Input.GetKeyDown(continueActionKeyCode))
-                {
-                    OnContinueClicked();
-                }
+                return;
             }
+
+            // That keycode needs to have been pressed this frame.
+            if (!UnityEngine.Input.GetKeyDown(continueActionKeyCode))
+            {
+                return;
+            }
+            
+            // The line must not be in the middle of being dismissed.
+            if ((currentLine?.Status) == LineStatus.Dismissed)
+            {
+                return;
+            }
+
+            // We're good to indicate that we want to skip/continue.
+            OnContinueClicked();
         }
 #endif
 
         public override void DismissLine(Action onDismissalComplete)
         {
 #if USE_INPUTSYSTEM && ENABLE_INPUT_SYSTEM
-            continueAction?.Disable();
-            continueActionReference?.action?.Disable();
+            if (continueActionType == ContinueActionType.InputSystemAction)
+            {
+                continueAction?.Disable();
+            }
+            else if (continueActionType == ContinueActionType.InputSystemActionFromAsset)
+            {
+                continueActionReference?.action?.Disable();
+            }
 #endif
 
             currentLine = null;

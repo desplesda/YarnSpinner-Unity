@@ -14,9 +14,11 @@ using System.Collections;
 
 namespace Yarn.Unity.Editor
 {
-    [ScriptedImporter(2, new[] { "yarnproject" }, 1), HelpURL("https://yarnspinner.dev/docs/unity/components/yarn-programs/")]
-    public class YarnProjectImporter : ScriptedImporter
+    [ScriptedImporter(3, new[] { "yarnproject" }, 1), HelpURL("https://yarnspinner.dev/docs/unity/components/yarn-programs/")]
+    [InitializeOnLoad]
+    public class YarnProjectImporter : ScriptedImporter, IYarnErrorSource
     {
+        static YarnProjectImporter() => YarnPreventPlayMode.AddYarnErrorSourceType<YarnProjectImporter>("t:YarnProject");
 
         [System.Serializable]
         public class SerializedDeclaration
@@ -112,11 +114,36 @@ namespace Yarn.Unity.Editor
 
         public bool useAddressableAssets;
 
+        /// <summary>
+        /// If <see langword="true"/>, <see cref="ActionManager"/> will search
+        /// all assemblies that have been defined using an <see
+        /// cref="AssemblyDefinitionAsset"/> for commands and actions, when this
+        /// project is loaded into a <see cref="DialogueRunner"/>. Otherwise,
+        /// <see cref="assembliesToSearch"/> will be used.
+        /// </summary>
+        /// <seealso cref="assembliesToSearch"/>
+        public bool searchAllAssembliesForActions = true;
+
+        /// <summary>
+        /// If <see cref="searchAllAssembliesForActions"/> is <see
+        /// langword="false"/>, <see cref="ActionManager"/> will search for
+        /// commands and functions in the assemblies defined in this list, when
+        /// this project is loaded into a <see cref="DialogueRunner"/>.
+        /// </summary>
+        /// <seealso cref="searchAllAssembliesForActions"/>
+        public AssemblyDefinitionAsset[] assembliesToSearch;
+
+        IList<string> IYarnErrorSource.CompileErrors => compileErrors;
+
+        bool IYarnErrorSource.Destroyed => this == null;
+
         public override void OnImportAsset(AssetImportContext ctx)
         {
 #if YARNSPINNER_DEBUG
             UnityEngine.Profiling.Profiler.enabled = true;
 #endif
+
+            YarnPreventPlayMode.AddYarnErrorSource(this);
 
             var project = ScriptableObject.CreateInstance<YarnProject>();
 
@@ -235,7 +262,7 @@ namespace Yarn.Unity.Editor
 
                 return;
             }
-            
+
             if (compilationResult.Program == null)
             {
                 ctx.LogImportError("Internal error: Failed to compile: resulting program was null, but compiler did not report errors.");
@@ -310,7 +337,11 @@ namespace Yarn.Unity.Editor
                 var newLocalization = ScriptableObject.CreateInstance<Localization>();
                 newLocalization.LocaleCode = pair.languageID;
 
-                newLocalization.AddLocalizedStrings(stringTable);
+                // Add these new lines to the localisation's asset
+                foreach (var entry in stringTable) {
+                    newLocalization.AddLocalisedStringToAsset(entry.ID, entry.Text);
+                }
+
 
                 project.localizations.Add(newLocalization);
                 newLocalization.name = pair.languageID;
@@ -342,7 +373,7 @@ namespace Yarn.Unity.Editor
                             // YarnProjectUtility.UpdateAssetAddresses to
                             // ensure that the appropriate assets have the
                             // appropriate addresses.)
-                            newLocalization.UsesAddressableAssets = true;                            
+                            newLocalization.UsesAddressableAssets = true;
                         }
                         else
                         {
@@ -411,7 +442,10 @@ namespace Yarn.Unity.Editor
                     Lock = YarnImporter.GetHashString(x.Value.text, 8),
                 });
 
-                developmentLocalization.AddLocalizedStrings(stringTableEntries);
+                // Add these new lines to the development localisation's asset
+                foreach (var entry in stringTableEntries) {
+                    developmentLocalization.AddLocalisedStringToAsset(entry.ID, entry.Text);
+                }
 
                 project.baseLocalization = developmentLocalization;
 
@@ -437,10 +471,54 @@ namespace Yarn.Unity.Editor
 
             project.compiledYarnProgram = compiledBytes;
 
+            // Get the list of assembly names we want to search for actions in.
+            IEnumerable<AssemblyDefinitionAsset> assembliesToSearch = this.assembliesToSearch;
+
+            if (searchAllAssembliesForActions) {
+                // We're searching all assemblies for actions. Find all assembly
+                // definitions in the project, including in packages, and load
+                // them.
+                assembliesToSearch = AssetDatabase
+                    .FindAssets($"t:{nameof(AssemblyDefinitionAsset)}")
+                    .Select(guid => AssetDatabase.GUIDToAssetPath(guid))
+                    .Distinct()
+                    .Select(path => AssetDatabase.LoadAssetAtPath<AssemblyDefinitionAsset>(path));
+            }
+
+            // We won't include any assemblies whose names begin with any of
+            // these prefixes
+            var excludedPrefixes = new[] {
+                "Unity",
+            };
+
+            // Go through each assembly definition asset, figure out its
+            // assembly name, and add it to the project's list of assembly names
+            // to search.
+            foreach (var reference in assembliesToSearch) {
+                if (reference == null) {
+                    continue;
+                }
+                var data = new AssemblyDefinition();
+                EditorJsonUtility.FromJsonOverwrite(reference.text, data);
+
+                if (excludedPrefixes.Any(prefix => data.name.StartsWith(prefix))) {
+                    continue;
+                }
+
+                project.searchAssembliesForActions.Add(data.name);
+            }
+
 #if YARNSPINNER_DEBUG
             UnityEngine.Profiling.Profiler.enabled = false;
 #endif
 
+        }
+
+        // A data class used for deserialising the JSON AssemblyDefinitionAssets
+        // into.
+        [System.Serializable]
+        private class AssemblyDefinition {
+            public string name;
         }
 
         /// <summary>
@@ -521,7 +599,8 @@ namespace Yarn.Unity.Editor
 
             var errors = compilationResult.Diagnostics.Where(d => d.Severity == Diagnostic.DiagnosticSeverity.Error);
 
-            if (errors.Count() > 0) {
+            if (errors.Count() > 0)
+            {
                 Debug.LogError($"Can't generate a strings table from a Yarn Project that contains compile errors", null);
                 return null;
             }
@@ -538,8 +617,6 @@ namespace Yarn.Unity.Editor
             });
 
             return stringTableEntries;
-
-
         }
     }
 
@@ -819,20 +896,16 @@ namespace Yarn.Unity.Editor
             }
             else
             {
-                // Use delayed fields where possible to preserve
-                // responsivity (we don't want to force a serialization on
-                // Unity 2018 after every keystroke, and delayed fields
-                // don't report a change until the user changes focus)
                 switch (property.propertyType)
                 {
                     case SerializedPropertyType.String:
-                        property.stringValue = EditorGUI.DelayedTextField(position, label, property.stringValue);
+                        property.stringValue = EditorGUI.TextField(position, label, property.stringValue);
                         break;
                     case SerializedPropertyType.Float:
-                        property.floatValue = EditorGUI.DelayedFloatField(position, label, property.floatValue);
+                        property.floatValue = EditorGUI.FloatField(position, label, property.floatValue);
                         break;
                     case SerializedPropertyType.Integer:
-                        property.floatValue = EditorGUI.DelayedIntField(position, label, property.intValue);
+                        property.floatValue = EditorGUI.IntField(position, label, property.intValue);
                         break;
                     default:
                         // Just use a regular field for other kinds of
@@ -945,7 +1018,7 @@ namespace Yarn.Unity.Editor
                     var wordWrappedTextField = EditorStyles.textField;
                     wordWrappedTextField.wordWrap = true;
 
-                    descriptionProperty.stringValue = EditorGUI.DelayedTextField(descriptionPosition, descriptionProperty.displayName, descriptionProperty.stringValue, wordWrappedTextField);
+                    descriptionProperty.stringValue = EditorGUI.TextField(descriptionPosition, descriptionProperty.displayName, descriptionProperty.stringValue, wordWrappedTextField);
                 }
 
                 if (!propertyIsReadOnly)
