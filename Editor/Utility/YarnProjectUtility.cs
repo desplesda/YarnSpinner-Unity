@@ -42,7 +42,7 @@ namespace Yarn.Unity.Editor
             destinationPath = AssetDatabase.GenerateUniqueAssetPath(destinationPath);
 
             // Create the program
-            var newProject = new Yarn.Compiler.Project();
+            var newProject = new Yarn.Compiler.Project(destinationPath);
             newProject.SaveToFile(destinationPath);
 
             AssetDatabase.ImportAsset(destinationPath);
@@ -632,7 +632,7 @@ namespace Yarn.Unity.Editor
             }
 
             // Next, replace the existing project with a new one!
-            var newProject = new Yarn.Compiler.Project();
+            var newProject = new Yarn.Compiler.Project(importer.assetPath);
             File.WriteAllText(importer.assetPath, newProject.GetJson());
 
             // Finally, import the assets we've touched.
