@@ -18,7 +18,7 @@ internal class CommandsCollection : IActionRegistration
     {
         foreach (var registrationMethod in Actions.ActionRegistrationMethods)
         {
-            registrationMethod.Invoke(this);
+            registrationMethod.Invoke(this, RegistrationType.Compilation);
         }
 
         yield return new CommandsWindow.HeaderListItem { DisplayName = "Commands" };
