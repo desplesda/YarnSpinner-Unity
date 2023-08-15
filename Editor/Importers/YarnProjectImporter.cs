@@ -130,7 +130,7 @@ namespace Yarn.Unity.Editor
             Project project;
             try {
                 project = Yarn.Compiler.Project.LoadFromFile(ctx.assetPath);
-            } catch (System.Text.Json.JsonException) {
+            } catch (System.Exception) {
                 var text = File.ReadAllText(ctx.assetPath);
                 if (text.StartsWith("title:")) {
                     // This is an old-style project that needs to be upgraded.
@@ -511,11 +511,34 @@ namespace Yarn.Unity.Editor
                         tags = RemoveLineIDFromMetadata(stringInfo.metadata).ToArray(),
                     });
                 }
+
+                // We've made changes to the table, so flag it and its shared
+                // data as dirty.
+                EditorUtility.SetDirty(table);
+                EditorUtility.SetDirty(table.SharedData);
                 return;
             }
             Debug.LogWarning($"Unable to find a locale in the string table that matches the default locale {project.BaseLanguage}");
         }
 #endif
+
+        /// <summary>
+        /// Gets a value indicating whether this Yarn Project contains any
+        /// compile errors.
+        /// </summary>
+        internal bool HasErrors {
+            get {
+                var importData = AssetDatabase.LoadAssetAtPath<ProjectImportData>(this.assetPath);
+
+                if (importData == null) {
+                    // If we have no import data, then a problem has occurred
+                    // when importing this project, so indicate 'true' as
+                    // signal.
+                    return true; 
+                }
+                return importData.HasCompileErrors;
+            }
+        }
 
         /// <summary>
         /// Gets a value indicating whether this Yarn Project is able to
@@ -570,7 +593,7 @@ namespace Yarn.Unity.Editor
         {
             CompilationResult? compilationResult = CompileStringsOnly();
 
-            if (!compilationResult.HasValue)
+            if (compilationResult == null)
             {
                 // We only get no value if we have no scripts to work with.
                 // In this case, return an empty collection - there's no
@@ -578,7 +601,7 @@ namespace Yarn.Unity.Editor
                 return new List<StringTableEntry>();
             }
 
-            var errors = compilationResult.Value.Diagnostics.Where(d => d.Severity == Diagnostic.DiagnosticSeverity.Error);
+            var errors = compilationResult.Diagnostics.Where(d => d.Severity == Diagnostic.DiagnosticSeverity.Error);
 
             if (errors.Count() > 0)
             {
@@ -586,14 +609,14 @@ namespace Yarn.Unity.Editor
                 return null;
             }
 
-            return GetStringTableEntries(compilationResult.Value);
+            return GetStringTableEntries(compilationResult);
         }
 
         internal IEnumerable<LineMetadataTableEntry> GenerateLineMetadataEntries()
         {
             CompilationResult? compilationResult = CompileStringsOnly();
 
-            if (!compilationResult.HasValue)
+            if (compilationResult == null)
             {
                 // We only get no value if we have no scripts to work with.
                 // In this case, return an empty collection - there's no
@@ -601,7 +624,7 @@ namespace Yarn.Unity.Editor
                 return new List<LineMetadataTableEntry>();
             }
 
-            var errors = compilationResult.Value.Diagnostics.Where(d => d.Severity == Diagnostic.DiagnosticSeverity.Error);
+            var errors = compilationResult.Diagnostics.Where(d => d.Severity == Diagnostic.DiagnosticSeverity.Error);
 
             if (errors.Count() > 0)
             {
@@ -609,7 +632,7 @@ namespace Yarn.Unity.Editor
                 return null;
             }
 
-            return LineMetadataTableEntriesFromCompilationResult(compilationResult.Value);
+            return LineMetadataTableEntriesFromCompilationResult(compilationResult);
         }
 
         private IEnumerable<StringTableEntry> GetStringTableEntries(CompilationResult result)

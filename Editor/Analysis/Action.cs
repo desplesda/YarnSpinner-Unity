@@ -444,7 +444,9 @@ namespace Yarn.Unity.ActionAnalyser
                         SyntaxFactory.List(
                             new[] {
                                 SyntaxFactory.ArrayRankSpecifier(
-                                    SyntaxFactory.SeparatedList<ExpressionSyntax>()
+                                    SyntaxFactory.SingletonSeparatedList<ExpressionSyntax>(
+                                        SyntaxFactory.OmittedArraySizeExpression()
+                                    )
                                 )
                             }
                         )

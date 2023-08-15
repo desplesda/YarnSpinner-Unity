@@ -8,16 +8,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+### Changed
+
+- Fixed a bug where `YarnNode` attributes would not display correctly in the Inspector when its property path is longer than 1.
+- Fixed a bug in the action registration source code generator that caused it to crash on certain files, which resulted in some commands not being registered at runtime.
+
+### Removed
+
+## [2.3.1] 2023-07-07
+
+### Added
+
 - Added the ability to add, modify, and delete source file patterns for Yarn projects in the Inspector.
 
 ### Changed
 
-### Removed
+- Calling `Stop` on the Dialogue Runner will now also dismiss the LineView, OptionListView, and VoiceOverView.
 
 ## [2.3.0-beta2] 2023-05-17
 
 ### Added
 
+- The `YarnScriptTemplate.txt` now has a newline at the end of the file.
 - The `.yarnproject` importer has been updated to use new JSON-formatted Yarn Projects.
   - JSON-formatted Yarn Projects replace the previous format, which stored all import data in Unity's `.meta` files.
   - JSON-formatted Yarn Projects allow a single Yarn script to be used in multiple Yarn Projects, and also allow the Yarn Spinner compiler to support upcoming new features.
@@ -35,8 +47,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
+- Added code to invalidate the Program cache on awake for Yarn Projects properly. This means your Yarn Projects will be correctly compiled and referenced in the editor.
 - Dialogue Runner will now report an error and stop early if you tell it to start running a node that isn't in the provided Yarn Project.
 - Dialogue Runner's 'On Dialogue Complete' event will now fire when you stop it via by calling the `Stop()` method.
+
+### Removed
+
 
 ## [2.3.0-beta1] 2023-03-06
 
